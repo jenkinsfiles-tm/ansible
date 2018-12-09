@@ -1,0 +1,120 @@
+#!groovy
+
+pipeline {
+
+  agent any
+
+  parameters {
+    string(
+      name: 'ANSIBLE_PLAYBOOK',
+      defaultValue: '',
+      description: 'File name of Ansible playbook'
+    )
+    password(
+      name: 'EXTRA_ARGS',
+      defaultValue: '',
+      description: 'Ansible playbook extra arguments'
+    )
+    string(
+      name: 'GIT_BRANCHES_ANSIBLE',
+      defaultValue: '*/master',
+      description: "Git branch or tag name or commit id to retrieve of GIT_URL to retrieve Ansible playbook"
+    )
+    string(
+      name: 'GIT_URL',
+      defaultValue: '',
+      description: "GitHub URL to retrieve Ansible playbook"
+    )
+    credentials(
+      name: 'INVENTORY',
+      defaultValue: '',
+      description: '',
+    )
+    string(
+      name: 'WORKING_DIR',
+      defaultValue: 'git-repo',
+      description: 'Job working directory'
+    )
+  }
+
+  stages {
+    stage('Retrieve Ansible playbook from Github') {
+      steps {
+        checkout(
+          [
+            $class: 'GitSCM',
+            branches: [
+              [
+                name: "${params.GIT_BRANCHES_ANSIBLE}"
+              ]
+            ],
+            extensions: [
+              [
+                $class: 'RelativeTargetDirectory',
+                relativeTargetDir: "${params.WORKING_DIR}"
+              ]
+            ],
+            doGenerateSubmoduleConfigurations: false,
+            submoduleCfg: [],
+            userRemoteConfigs: [
+              [
+                url: "${params.GIT_URL}"
+              ]
+            ]
+          ]
+        )
+      }
+    }
+
+    stage('Create ansible.cfg file') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+            sh "echo '[defaults]' > ansible.cfg"
+            sh "echo 'host_key_checking = False' >> ansible.cfg"
+        }
+      }
+    }
+
+    stage('Configure ansible inventory file') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          wrap([$class: 'MaskPasswordsBuildWrapper']) {
+            sh "cat ${params.INVENTORY} > hosts"
+          }
+        }
+      }
+    }
+
+    stage('Execute ansible-playbook command') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          wrap([$class: 'MaskPasswordsBuildWrapper']) {
+            sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK}.yml \
+                -i hosts \
+                ${params.EXTRA_ARGS} \
+                | tee ansible.log"
+          }
+        }
+      }
+    }
+
+    stage('Analyze ansible log') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def output = sh(
+                            returnStdout: true,
+                            script: "tail -n 2 ansible.log"
+                         )
+
+            if (output.contains("unreachable=0") && output.contains("failed=0")) {
+              sh "echo success"
+            } else {
+              error "ansible-playbook error\n$output"
+            }
+          }
+        }
+      }
+    }
+  }
+}
