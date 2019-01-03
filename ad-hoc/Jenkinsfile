@@ -1,0 +1,77 @@
+#!groovy
+
+pipeline {
+
+  agent any
+
+  parameters {
+    string(
+      name: 'AD_HOC_COMMAND',
+      defaultValue: '',
+      description: 'Ansible ad-hoc command to execute'
+    )
+    credentials(
+      name: 'INVENTORY',
+      defaultValue: '',
+      description: ''
+    )
+    string(
+      name: 'WORKING_DIR',
+      defaultValue: '/tmp/ad-hoc',
+      description: 'Job working directory'
+    )
+  }
+
+  stages {
+    stage('Create ansible.cfg file') {
+      steps {
+        sh "rm -rf ${params.WORKING_DIR}"
+        sh "mkdir -p ${params.WORKING_DIR}"
+        dir ("${params.WORKING_DIR}") {
+          sh "echo '[defaults]' > ansible.cfg"
+          sh "echo 'host_key_checking = False' >> ansible.cfg"
+        }
+      }
+    }
+
+    stage('Configure Ansible inventory file') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          wrap([$class: 'MaskPasswordsBuildWrapper']) {
+            sh "cat ${params.INVENTORY} > inventory"
+          }
+        }
+      }
+    }
+
+    stage('Execute Asible ad-hoc command') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          sh "ansible all \
+              -i inventory \
+              ${params.AD_HOC_COMMAND} \
+              | tee ansible.log"
+        }
+      }
+    }
+
+    stage('Analyze ansible.log and show results') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def output = sh(
+                            returnStdout: true,
+                            script: "head ansible.log"
+                         )
+
+            if (output.contains("CHANGED")) {
+              sh "echo success"
+            } else {
+              error "Ansible ad-hoc command execution error\n$output"
+            }
+          }
+        }
+      }
+    }
+  }
+}
