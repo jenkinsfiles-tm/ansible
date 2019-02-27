@@ -28,7 +28,12 @@ pipeline {
     credentials(
       name: 'INVENTORY',
       defaultValue: '',
-      description: '',
+      description: ''
+    )
+    credentials(
+      name: 'SSH_PRIVATE_KEY',
+      defaultValue: '',
+      description: 'Path of ssh private key, Ansible use it for connecting to the remote system'
     )
     string(
       name: 'WORKING_DIR',
@@ -85,12 +90,25 @@ pipeline {
       }
     }
 
+    stage('Create ssh private key') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          wrap([$class: 'MaskPasswordsBuildWrapper']) {
+            sh "rm -rf .ssh_private_key"
+            sh "cat ${params.SSH_PRIVATE_KEY} > .ssh_private_key"
+            sh "chmod 400 .ssh_private_key"
+          }
+        }
+      }
+    }
+
     stage('Execute ansible-playbook command') {
       steps {
         dir ("${params.WORKING_DIR}") {
           wrap([$class: 'MaskPasswordsBuildWrapper']) {
             sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK}.yml \
                 -i hosts \
+                --private-key=.ssh_private_key \
                 ${params.EXTRA_ARGS} \
                 | tee ansible.log"
           }
