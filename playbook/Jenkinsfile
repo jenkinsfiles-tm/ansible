@@ -25,15 +25,15 @@ pipeline {
       defaultValue: '',
       description: "GitHub URL to retrieve Ansible playbook"
     )
-    credentials(
-      name: 'INVENTORY',
+    string(
+      name: 'INVENTORY_PARAMS',
       defaultValue: '',
-      description: ''
+      description: 'ansible-playbook command inventory parameters'
     )
     credentials(
       name: 'SSH_PRIVATE_KEY',
       defaultValue: '',
-      description: 'Path of ssh private key, Ansible use it for connecting to the remote system'
+      description: 'SSH private key, Ansible use it for connecting to the remote system'
     )
     string(
       name: 'WORKING_DIR',
@@ -80,16 +80,6 @@ pipeline {
       }
     }
 
-    stage('Configure ansible inventory file') {
-      steps {
-        dir ("${params.WORKING_DIR}") {
-          wrap([$class: 'MaskPasswordsBuildWrapper']) {
-            sh "cat ${params.INVENTORY} > hosts"
-          }
-        }
-      }
-    }
-
     stage('Create ssh private key') {
       steps {
         dir ("${params.WORKING_DIR}") {
@@ -107,7 +97,7 @@ pipeline {
         dir ("${params.WORKING_DIR}") {
           wrap([$class: 'MaskPasswordsBuildWrapper']) {
             sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK}.yml \
-                -i hosts \
+                ${params.INVENTORY_PARAMS} \
                 --private-key=.ssh_private_key \
                 ${params.EXTRA_ARGS} \
                 | tee ansible.log"
