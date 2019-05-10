@@ -87,12 +87,12 @@ pipeline {
             def private_key_path = "${params.SSH_PRIVATEKEY_PATH}"
 
             if (private_key_path.length() == 0) {
-              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK}.yml \
+              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
                   ${params.INVENTORY_PARAMS} \
                   ${params.EXTRA_ARGS} \
                   | tee ansible.log"
             } else {
-              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK}.yml \
+              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
                   ${params.INVENTORY_PARAMS} \
                   --private-key=${params.SSH_PRIVATEKEY_PATH} \
                   ${params.EXTRA_ARGS} \
