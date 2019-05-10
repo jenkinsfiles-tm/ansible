@@ -10,7 +10,7 @@ pipeline {
       defaultValue: '',
       description: 'File name of Ansible playbook'
     )
-    password(
+    string(
       name: 'EXTRA_ARGS',
       defaultValue: '',
       description: 'Ansible playbook extra arguments'
@@ -30,10 +30,10 @@ pipeline {
       defaultValue: '',
       description: 'ansible-playbook command inventory parameters'
     )
-    credentials(
-      name: 'SSH_PRIVATE_KEY',
+    string(
+      name: 'SSH_PRIVATEKEY_PATH',
       defaultValue: '',
-      description: 'SSH private key, Ansible use it for connecting to the remote system'
+      description: 'SSH private key path, Ansible use it for connecting to the remote system. Default value: ~/.ssh/id_rsa'
     )
     string(
       name: 'WORKING_DIR',
@@ -80,27 +80,24 @@ pipeline {
       }
     }
 
-    stage('Create ssh private key') {
-      steps {
-        dir ("${params.WORKING_DIR}") {
-          wrap([$class: 'MaskPasswordsBuildWrapper']) {
-            sh "rm -rf .ssh_private_key"
-            sh "cat ${params.SSH_PRIVATE_KEY} > .ssh_private_key"
-            sh "chmod 400 .ssh_private_key"
-          }
-        }
-      }
-    }
-
     stage('Execute ansible-playbook command') {
       steps {
         dir ("${params.WORKING_DIR}") {
-          wrap([$class: 'MaskPasswordsBuildWrapper']) {
-            sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK}.yml \
-                ${params.INVENTORY_PARAMS} \
-                --private-key=.ssh_private_key \
-                ${params.EXTRA_ARGS} \
-                | tee ansible.log"
+          script {
+            def private_key_path = "${params.SSH_PRIVATEKEY_PATH}"
+
+            if (private_key_path.length() == 0) {
+              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK}.yml \
+                  ${params.INVENTORY_PARAMS} \
+                  ${params.EXTRA_ARGS} \
+                  | tee ansible.log"
+            } else {
+              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK}.yml \
+                  ${params.INVENTORY_PARAMS} \
+                  --private-key=${params.SSH_PRIVATEKEY_PATH} \
+                  ${params.EXTRA_ARGS} \
+                  | tee ansible.log"
+            }
           }
         }
       }
