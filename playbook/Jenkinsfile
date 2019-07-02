@@ -13,17 +13,17 @@ pipeline {
     string(
       name: 'EXTRA_ARGS',
       defaultValue: '',
-      description: 'Ansible playbook extra arguments'
+      description: 'ansible-playbook command extra arguments'
     )
     string(
       name: 'GIT_BRANCHES_ANSIBLE',
       defaultValue: '*/master',
-      description: "Git branch or tag name or commit id to retrieve of GIT_URL to retrieve Ansible playbook"
+      description: "Git branch or tag name or commit id to retrieve of GIT_URL of Ansible playbook"
     )
     string(
       name: 'GIT_URL',
       defaultValue: '',
-      description: "GitHub URL to retrieve Ansible playbook"
+      description: "GitHub URL to retrieve"
     )
     string(
       name: 'INVENTORY_PARAMS',
@@ -37,7 +37,7 @@ pipeline {
     )
     string(
       name: 'WORKING_DIR',
-      defaultValue: 'git-repo',
+      defaultValue: 'my-playbook',
       description: 'Job working directory'
     )
   }
@@ -74,8 +74,24 @@ pipeline {
     stage('Create ansible.cfg file') {
       steps {
         dir ("${params.WORKING_DIR}") {
-            sh "echo '[defaults]' > ansible.cfg"
-            sh "echo 'host_key_checking = False' >> ansible.cfg"
+          sh "echo '[defaults]' > ansible.cfg"
+          sh "echo 'host_key_checking = False' >> ansible.cfg"
+        }
+      }
+    }
+
+    stage('Install galaxy roles') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def file_exists = fileExists('roles/requirements.yml')
+
+            if (file_exists) {
+              sh "ansible-galaxy install -r roles/requirements.yml -p roles/"
+            } else {
+              sh "echo 'No Ansible Galaxy roles to be installed found'"
+            }
+          }
         }
       }
     }
@@ -120,6 +136,12 @@ pipeline {
           }
         }
       }
+    }
+  }
+
+  post {
+    always {
+      cleanWs()
     }
   }
 }
