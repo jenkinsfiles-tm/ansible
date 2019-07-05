@@ -16,14 +16,24 @@ pipeline {
       description: 'ansible-playbook command extra arguments'
     )
     string(
-      name: 'GIT_BRANCHES_ANSIBLE',
+      name: 'GIT_BRANCHES_ANSIBLECFG',
       defaultValue: '*/master',
-      description: "Git branch or tag name or commit id to retrieve of GIT_URL of Ansible playbook"
+      description: "Git branch or tag name or commit id of GIT_URL of ansible.cfg"
     )
     string(
-      name: 'GIT_URL',
+      name: 'GIT_BRANCHES_PLAYBOOKS',
+      defaultValue: '*/master',
+      description: "Git branch or tag name or commit id to retrieve of GIT_URL of Ansible playbooks"
+    )
+    string(
+      name: 'GIT_URL_ANSIBLECFG',
       defaultValue: '',
-      description: "GitHub URL to retrieve"
+      description: "GitHub URL of ansible.cfg"
+    )
+    string(
+      name: 'GIT_URL_PLAYBOOKS',
+      defaultValue: '',
+      description: "GitHub URL of Ansible Playbooks"
     )
     string(
       name: 'INVENTORY_PARAMS',
@@ -43,14 +53,14 @@ pipeline {
   }
 
   stages {
-    stage('Retrieve Ansible playbook from Github') {
+    stage('Retrieve Ansible playbook') {
       steps {
         checkout(
           [
             $class: 'GitSCM',
             branches: [
               [
-                name: "${params.GIT_BRANCHES_ANSIBLE}"
+                name: "${params.GIT_BRANCHES_PLAYBOOKS}"
               ]
             ],
             extensions: [
@@ -63,7 +73,7 @@ pipeline {
             submoduleCfg: [],
             userRemoteConfigs: [
               [
-                url: "${params.GIT_URL}"
+                url: "${params.GIT_URL_PLAYBOOKS}"
               ]
             ]
           ]
@@ -71,11 +81,40 @@ pipeline {
       }
     }
 
-    stage('Create ansible.cfg file') {
+    stage('Retrieve ansible.cfg') {
+      when {
+        expression {
+          "${params.GIT_URL_ANSIBLECFG}" != ""
+        }
+      }
+
       steps {
-        dir ("${params.WORKING_DIR}") {
-          sh "echo '[defaults]' > ansible.cfg"
-          sh "echo 'host_key_checking = False' >> ansible.cfg"
+        checkout(
+          [
+            $class: 'GitSCM',
+            branches: [
+              [
+                name: "${params.GIT_BRANCHES_ANSIBLECFG}"
+              ]
+            ],
+            extensions: [
+              [
+                $class: 'RelativeTargetDirectory',
+                relativeTargetDir: "${params.WORKING_DIR}/ansiblecfg"
+              ]
+            ],
+            doGenerateSubmoduleConfigurations: false,
+            submoduleCfg: [],
+            userRemoteConfigs: [
+              [
+                url: "${params.GIT_URL_ANSIBLECFG}"
+              ]
+            ]
+          ]
+        )
+
+        dir ("${params.WORKING_DIR}/ansiblecfg") {
+          sh "mv ansible.cfg ../"
         }
       }
     }
@@ -96,7 +135,7 @@ pipeline {
       }
     }
 
-    stage('Execute ansible-playbook command') {
+    stage('Execute ansible-playbook') {
       steps {
         dir ("${params.WORKING_DIR}") {
           script {
@@ -119,7 +158,7 @@ pipeline {
       }
     }
 
-    stage('Analyze ansible log') {
+    stage('Analyze results') {
       steps {
         dir ("${params.WORKING_DIR}") {
           script {
