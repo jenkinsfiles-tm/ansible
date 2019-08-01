@@ -41,9 +41,9 @@ pipeline {
       description: 'ansible-playbook command inventory parameters'
     )
     string(
-      name: 'SSH_PRIVATEKEY_PATH',
+      name: 'SSH_PRIVATE_KEY',
       defaultValue: '',
-      description: 'SSH private key path, Ansible use it for connecting to the remote system. Default value: ~/.ssh/id_rsa'
+      description: 'SSH private key, Ansible use it for connecting to the remote system. Must be the name of an existing Key.'
     )
     string(
       name: 'WORKING_DIR',
@@ -135,25 +135,26 @@ pipeline {
       }
     }
 
+    stage('Set SSH Private Key') {
+      environment {
+        SSH_KEY = credentials("${params.SSH_PRIVATE_KEY}")
+      }
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          sh "cat ${env.SSH_KEY} > .private_key.pem"
+          sh "chmod 600 .private_key.pem"
+        }
+      }
+    }
+
     stage('Execute ansible-playbook') {
       steps {
         dir ("${params.WORKING_DIR}") {
-          script {
-            def private_key_path = "${params.SSH_PRIVATEKEY_PATH}"
-
-            if (private_key_path.length() == 0) {
-              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
-                  ${params.INVENTORY_PARAMS} \
-                  ${params.EXTRA_ARGS} \
-                  | tee ansible.log"
-            } else {
-              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
-                  ${params.INVENTORY_PARAMS} \
-                  --private-key=${params.SSH_PRIVATEKEY_PATH} \
-                  ${params.EXTRA_ARGS} \
-                  | tee ansible.log"
-            }
-          }
+          sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
+              ${params.INVENTORY_PARAMS} \
+              --key-file '.private_key.pem' \
+              ${params.EXTRA_ARGS} \
+              | tee ansible.log"
         }
       }
     }
