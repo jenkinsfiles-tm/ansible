@@ -136,13 +136,33 @@ pipeline {
     }
 
     stage('Set SSH Private Key') {
-      environment {
-        SSH_KEY = credentials("${params.SSH_PRIVATE_KEY}")
-      }
       steps {
         dir ("${params.WORKING_DIR}") {
-          sh "cat ${env.SSH_KEY} > .private_key.pem"
-          sh "chmod 600 .private_key.pem"
+          script {
+            def private_key = sh(
+                            returnStdout: true,
+                            script: "echo ${params.SSH_PRIVATE_KEY}"
+                         )
+             
+            if ( private_key.trim().length() != 0 ) {
+              withCredentials(
+                bindings: 
+                  [
+                    sshUserPrivateKey
+                      (
+                         credentialsId: "${params.SSH_PRIVATE_KEY}", \
+                         keyFileVariable: 'PRIVATE_KEY'
+                      )
+                  ]
+              ) 
+              {
+                sh "cat $PRIVATE_KEY > .private_key.pem"
+                sh "chmod 600 .private_key.pem"
+              }
+            } else {
+              sh "echo 'No private key id provided'"
+            }
+          }
         }
       }
     }
@@ -150,11 +170,25 @@ pipeline {
     stage('Execute ansible-playbook') {
       steps {
         dir ("${params.WORKING_DIR}") {
-          sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
-              ${params.INVENTORY_PARAMS} \
-              --key-file '.private_key.pem' \
-              ${params.EXTRA_ARGS} \
-              | tee ansible.log"
+          script {
+            def private_key = sh(
+                            returnStdout: true,
+                            script: "echo ${params.SSH_PRIVATE_KEY}"
+                         )
+
+            if ( private_key.trim().length() != 0 ) {
+              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
+                  ${params.INVENTORY_PARAMS} \
+                  --key-file '.private_key.pem' \
+                  ${params.EXTRA_ARGS} \
+                  | tee ansible.log"
+            } else {
+              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
+                  ${params.INVENTORY_PARAMS} \
+                  ${params.EXTRA_ARGS} \
+                  | tee ansible.log"
+            }
+          }
         }
       }
     }
