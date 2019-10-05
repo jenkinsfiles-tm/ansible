@@ -1,0 +1,248 @@
+#!groovy
+
+pipeline {
+
+  agent any
+
+  parameters {
+    string(
+      name: 'ANSIBLE_PLAYBOOK',
+      defaultValue: '',
+      description: 'File name of Ansible playbook'
+    )
+    string(
+      name: 'AWS_CREDENTIALS_ID',
+      defaultValue: '',
+      description: 'AWS credentials id, stored in Jenkins credentials'
+    )
+    string(
+      name: 'AWS_REGION',
+      defaultValue: '',
+      description: 'AWS CLI region name'
+    )
+    string(
+      name: 'EXTRA_ARGS',
+      defaultValue: '',
+      description: 'ansible-playbook command extra arguments'
+    )
+    string(
+      name: 'GIT_BRANCHES_ANSIBLECFG',
+      defaultValue: '*/master',
+      description: "Git branch or tag name or commit id of GIT_URL of ansible.cfg"
+    )
+    string(
+      name: 'GIT_BRANCHES_PLAYBOOKS',
+      defaultValue: '*/master',
+      description: "Git branch or tag name or commit id to retrieve of GIT_URL of Ansible playbooks"
+    )
+    string(
+      name: 'GIT_URL_ANSIBLECFG',
+      defaultValue: '',
+      description: "GitHub URL of ansible.cfg"
+    )
+    string(
+      name: 'GIT_URL_PLAYBOOKS',
+      defaultValue: '',
+      description: "GitHub URL of Ansible Playbooks"
+    )
+    string(
+      name: 'INVENTORY_PARAMS',
+      defaultValue: '',
+      description: 'ansible-playbook command inventory parameters'
+    )
+    string(
+      name: 'SSH_PRIVATE_KEY',
+      defaultValue: '',
+      description: 'SSH private key, Ansible use it for connecting to the remote system. Must be the name of an existing Key.'
+    )
+    string(
+      name: 'WORKING_DIR',
+      defaultValue: 'my-playbook',
+      description: 'Job working directory'
+    )
+  }
+
+  stages {
+    stage('Retrieve Ansible playbook') {
+      steps {
+        checkout(
+          [
+            $class: 'GitSCM',
+            branches: [
+              [
+                name: "${params.GIT_BRANCHES_PLAYBOOKS}"
+              ]
+            ],
+            extensions: [
+              [
+                $class: 'RelativeTargetDirectory',
+                relativeTargetDir: "${params.WORKING_DIR}"
+              ]
+            ],
+            doGenerateSubmoduleConfigurations: false,
+            submoduleCfg: [],
+            userRemoteConfigs: [
+              [
+                url: "${params.GIT_URL_PLAYBOOKS}"
+              ]
+            ]
+          ]
+        )
+      }
+    }
+
+    stage('Retrieve ansible.cfg') {
+      when {
+        expression {
+          "${params.GIT_URL_ANSIBLECFG}" != ""
+        }
+      }
+
+      steps {
+        checkout(
+          [
+            $class: 'GitSCM',
+            branches: [
+              [
+                name: "${params.GIT_BRANCHES_ANSIBLECFG}"
+              ]
+            ],
+            extensions: [
+              [
+                $class: 'RelativeTargetDirectory',
+                relativeTargetDir: "${params.WORKING_DIR}/ansiblecfg"
+              ]
+            ],
+            doGenerateSubmoduleConfigurations: false,
+            submoduleCfg: [],
+            userRemoteConfigs: [
+              [
+                url: "${params.GIT_URL_ANSIBLECFG}"
+              ]
+            ]
+          ]
+        )
+
+        dir ("${params.WORKING_DIR}/ansiblecfg") {
+          sh "mv ansible.cfg ../"
+        }
+      }
+    }
+
+    stage('Install galaxy roles') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def file_exists = fileExists('roles/requirements.yml')
+
+            if (file_exists) {
+              sh "ansible-galaxy install -r roles/requirements.yml -p roles/"
+            } else {
+              sh "echo 'No Ansible Galaxy roles to be installed found'"
+            }
+          }
+        }
+      }
+    }
+
+    stage('Set SSH Private Key') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def private_key = sh(
+                            returnStdout: true,
+                            script: "echo ${params.SSH_PRIVATE_KEY}"
+                         )
+
+            if ( private_key.trim().length() != 0 ) {
+              withCredentials(
+                bindings:
+                  [
+                    sshUserPrivateKey
+                      (
+                         credentialsId: "${params.SSH_PRIVATE_KEY}", \
+                         keyFileVariable: 'PRIVATE_KEY'
+                      )
+                  ]
+              )
+              {
+                sh "cat $PRIVATE_KEY > .private_key.pem"
+                sh "chmod 600 .private_key.pem"
+              }
+            } else {
+              sh "echo 'No private key id provided'"
+            }
+          }
+        }
+      }
+    }
+
+    stage('Execute ansible-playbook') {
+      steps {
+        withCredentials(
+          [
+            [
+              $class: 'AmazonWebServicesCredentialsBinding',
+              credentialsId: "${params.AWS_CREDENTIALS_ID}",
+              accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+              secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+            ]
+          ]
+        ) {
+          dir ("${params.WORKING_DIR}") {
+            script {
+              def private_key = sh(
+                              returnStdout: true,
+                              script: "echo ${params.SSH_PRIVATE_KEY}"
+                           )
+
+              if ( private_key.trim().length() != 0 ) {
+                sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
+                    ${params.INVENTORY_PARAMS} \
+                    --key-file '.private_key.pem' \
+                    ${params.EXTRA_ARGS} \
+                    -e 'aws_access_key_id=${env.AWS_ACCESS_KEY_ID}' \
+                    -e 'aws_secret_access_key=${env.AWS_SECRET_ACCESS_KEY}' \
+                    -e 'aws_region=${params.AWS_REGION}' \
+                    | tee ansible.log"
+              } else {
+                sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
+                    ${params.INVENTORY_PARAMS} \
+                    ${params.EXTRA_ARGS} \
+                    -e 'aws_access_key_id=${env.AWS_ACCESS_KEY_ID}' \
+                    -e 'aws_secret_access_key=${env.AWS_SECRET_ACCESS_KEY}' \
+                    -e 'aws_region=${params.AWS_REGION}' \
+                    | tee ansible.log"
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Analyze results') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def output = sh(
+                            returnStdout: true,
+                            script: "tail -n 2 ansible.log"
+                         )
+
+            if (output.contains("unreachable=0") && output.contains("failed=0")) {
+              sh "echo success"
+            } else {
+              error "ansible-playbook error\n$output"
+            }
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      cleanWs()
+    }
+  }
+}
