@@ -1,0 +1,230 @@
+#!groovy
+
+pipeline {
+
+  agent any
+
+  parameters {
+    string(
+      name: 'FILE_NAME',
+      defaultValue: '',
+      description: 'Testinfra file'
+    )
+    string(
+      name: 'EXTRA_ARGS',
+      defaultValue: '',
+      description: 'Extra arguments to pass to command'
+    )
+    string(
+      name: 'GIT_BRANCHES_ANSIBLECFG',
+      defaultValue: '*/master',
+      description: "Git branch or tag name or commit id of GIT_URL of ansible.cfg"
+    )
+    string(
+      name: 'GIT_BRANCHES_TESTINFRA',
+      defaultValue: '*/master',
+      description: "Git branch or tag name or commit id to retrieve of GIT_URL of Testinfra file"
+    )
+    string(
+      name: 'GIT_URL_ANSIBLECFG',
+      defaultValue: '',
+      description: "GitHub URL of ansible.cfg"
+    )
+    string(
+      name: 'GIT_URL_TESTINFRA',
+      defaultValue: '',
+      description: "GitHub URL of Testinfra file"
+    )
+    string(
+      name: 'INVENTORY',
+      defaultValue: '',
+      description: 'Ansible inventory file name'
+    )
+    string(
+      name: 'SSH_PRIVATE_KEY',
+      defaultValue: '',
+      description: 'SSH private key, Testinfra use it for connecting to the remote system. Must be the name of an existing Key.'
+    )
+    string(
+      name: 'WORKING_DIR',
+      defaultValue: 'my-testinfra',
+      description: 'Job working directory'
+    )
+  }
+
+  stages {
+    stage('Retrieve Testinfra file') {
+      steps {
+        checkout(
+          [
+            $class: 'GitSCM',
+            branches: [
+              [
+                name: "${params.GIT_BRANCHES_TESTINFRA}"
+              ]
+            ],
+            extensions: [
+              [
+                $class: 'RelativeTargetDirectory',
+                relativeTargetDir: "${params.WORKING_DIR}"
+              ]
+            ],
+            doGenerateSubmoduleConfigurations: false,
+            submoduleCfg: [],
+            userRemoteConfigs: [
+              [
+                url: "${params.GIT_URL_TESTINFRA}"
+              ]
+            ]
+          ]
+        )
+      }
+    }
+
+    stage('Retrieve ansible.cfg') {
+      when {
+        expression {
+          "${params.GIT_URL_ANSIBLECFG}" != ""
+        }
+      }
+
+      steps {
+        checkout(
+          [
+            $class: 'GitSCM',
+            branches: [
+              [
+                name: "${params.GIT_BRANCHES_ANSIBLECFG}"
+              ]
+            ],
+            extensions: [
+              [
+                $class: 'RelativeTargetDirectory',
+                relativeTargetDir: "${params.WORKING_DIR}/ansiblecfg"
+              ]
+            ],
+            doGenerateSubmoduleConfigurations: false,
+            submoduleCfg: [],
+            userRemoteConfigs: [
+              [
+                url: "${params.GIT_URL_ANSIBLECFG}"
+              ]
+            ]
+          ]
+        )
+
+        dir ("${params.WORKING_DIR}/ansiblecfg") {
+          sh "mv ansible.cfg ../"
+        }
+      }
+    }
+
+
+    stage('Configure .ansible.cfg') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def is_ansiblecfg = sh(
+                            returnStdout: true,
+                            script: "echo ${params.GIT_URL_ANSIBLECFG}"
+                         )
+
+            if ( is_ansiblecfg.trim().length() != 0 ) {
+              sh "echo '[defautl]' > .ansible.cfg"
+              sh "echo 'inventory = ${env.ANSIBLE_INVENTORY_DIR}/${params.INVENTORY}' > .ansible.cfg
+              sh "echo 'private_key_file = /path/to/file.pem' > .ansible.cfg"
+            } else {
+              sh "touch .ansible.cfg"
+              sh "echo '[defautl]' > .ansible.cfg"
+              sh "echo 'inventory = ${env.ANSIBLE_INVENTORY_DIR}/${params.INVENTORY}' > .ansible.cfg
+              sh "echo 'private_key_file = /path/to/file.pem' > .ansible.cfg"
+            }
+          }
+        }
+      }
+    }
+
+    stage('Set SSH Private Key') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def private_key = sh(
+                            returnStdout: true,
+                            script: "echo ${params.SSH_PRIVATE_KEY}"
+                         )
+
+            if ( private_key.trim().length() != 0 ) {
+              withCredentials(
+                bindings:
+                  [
+                    sshUserPrivateKey
+                      (
+                         credentialsId: "${params.SSH_PRIVATE_KEY}", \
+                         keyFileVariable: 'PRIVATE_KEY'
+                      )
+                  ]
+              )
+              {
+                sh "cat $PRIVATE_KEY > .private_key.pem"
+                sh "chmod 600 .private_key.pem"
+              }
+            } else {
+              sh "echo 'No private key id provided'"
+            }
+          }
+        }
+      }
+    }
+
+    stage('Execute Testinfra') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def private_key = sh(
+                            returnStdout: true,
+                            script: "echo ${params.SSH_PRIVATE_KEY}"
+                         )
+
+            if ( private_key.trim().length() != 0 ) {
+              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
+                  ${params.INVENTORY_PARAMS} \
+                  --key-file '.private_key.pem' \
+                  ${params.EXTRA_ARGS} \
+                  | tee ansible.log"
+            } else {
+              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
+                  ${params.INVENTORY_PARAMS} \
+                  ${params.EXTRA_ARGS} \
+                  | tee ansible.log"
+            }
+          }
+        }
+      }
+    }
+
+    stage('Analyze results') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def output = sh(
+                            returnStdout: true,
+                            script: "tail -n 2 ansible.log"
+                         )
+
+            if (output.contains("unreachable=0") && output.contains("failed=0")) {
+              sh "echo success"
+            } else {
+              error "ansible-playbook error\n$output"
+            }
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      cleanWs()
+    }
+  }
+}
