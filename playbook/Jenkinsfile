@@ -6,61 +6,36 @@ pipeline {
 
   parameters {
     string(
-      name: 'ANSIBLE_PLAYBOOK',
+      name: 'CONFIG_FILE_PATH',
       defaultValue: '',
-      description: 'File name of Ansible playbook'
+      description: 'Jenkins job configuration file path'
     )
     string(
-      name: 'EXTRA_ARGS',
-      defaultValue: '',
-      description: 'ansible-playbook command extra arguments'
-    )
-    string(
-      name: 'GIT_BRANCHES_ANSIBLECFG',
+      name: 'GIT_BRANCHES',
       defaultValue: '*/master',
-      description: "Git branch or tag name or commit id of GIT_URL of ansible.cfg"
+      description: "Git branch or tag name or commit id of GIT_URL of Jenkins job configuration file"
     )
     string(
-      name: 'GIT_BRANCHES_PLAYBOOKS',
-      defaultValue: '*/master',
-      description: "Git branch or tag name or commit id to retrieve of GIT_URL of Ansible playbooks"
-    )
-    string(
-      name: 'GIT_URL_ANSIBLECFG',
+      name: 'GIT_URL',
       defaultValue: '',
-      description: "GitHub URL of ansible.cfg"
-    )
-    string(
-      name: 'GIT_URL_PLAYBOOKS',
-      defaultValue: '',
-      description: "GitHub URL of Ansible Playbooks"
-    )
-    string(
-      name: 'INVENTORY_PARAMS',
-      defaultValue: '',
-      description: 'ansible-playbook command inventory parameters'
-    )
-    string(
-      name: 'SSH_PRIVATE_KEY',
-      defaultValue: '',
-      description: 'SSH private key, Ansible use it for connecting to the remote system. Must be the name of an existing Key.'
+      description: "GitHub URL of Jenkins job configuration file"
     )
     string(
       name: 'WORKING_DIR',
-      defaultValue: 'my-playbook',
+      defaultValue: 'ansible-playbook',
       description: 'Job working directory'
     )
   }
 
   stages {
-    stage('Retrieve Ansible playbook') {
+    stage('Retrieve Config file') {
       steps {
         checkout(
           [
             $class: 'GitSCM',
             branches: [
               [
-                name: "${params.GIT_BRANCHES_PLAYBOOKS}"
+                name: "${params.GIT_BRANCHES}"
               ]
             ],
             extensions: [
@@ -73,7 +48,7 @@ pipeline {
             submoduleCfg: [],
             userRemoteConfigs: [
               [
-                url: "${params.GIT_URL_PLAYBOOKS}"
+                url: "${params.GIT_URL}"
               ]
             ]
           ]
@@ -81,47 +56,107 @@ pipeline {
       }
     }
 
-    stage('Retrieve ansible.cfg') {
-      when {
-        expression {
-          "${params.GIT_URL_ANSIBLECFG}" != ""
+    stage('Retrieve Ansible playbook') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def git_branches_playbook = sh (
+                                            returnStdout: true,
+                                            script: "cat ${params.CONFIG_FILE_PATH} \
+                                                    | grep git_branches_playbook: \
+                                                    | sed -e 's/git_branches_playbook://g'"
+                                           ).trim()
+
+            def git_url_playbook      = sh (
+                                            returnStdout: true,
+                                            script: "cat ${params.CONFIG_FILE_PATH} \
+                                                    | grep git_url_playbook: \
+                                                    | sed -e 's/git_url_playbook://g'"
+                                           ).trim()
+
+            checkout(
+              [
+                $class: 'GitSCM',
+                branches: [
+                  [
+                    name: "$git_branches_playbook"
+                  ]
+                ],
+                extensions: [
+                  [
+                    $class: 'RelativeTargetDirectory',
+                    relativeTargetDir: "ansible-playbooks"
+                  ]
+                ],
+                doGenerateSubmoduleConfigurations: false,
+                submoduleCfg: [],
+                userRemoteConfigs: [
+                  [
+                    url: "$git_url_playbook"
+                  ]
+                ]
+              ]
+            )
+          }
         }
       }
+    }
 
+    stage('Retrieve ansible.cfg') {
       steps {
-        checkout(
-          [
-            $class: 'GitSCM',
-            branches: [
-              [
-                name: "${params.GIT_BRANCHES_ANSIBLECFG}"
-              ]
-            ],
-            extensions: [
-              [
-                $class: 'RelativeTargetDirectory',
-                relativeTargetDir: "${params.WORKING_DIR}/ansiblecfg"
-              ]
-            ],
-            doGenerateSubmoduleConfigurations: false,
-            submoduleCfg: [],
-            userRemoteConfigs: [
-              [
-                url: "${params.GIT_URL_ANSIBLECFG}"
-              ]
-            ]
-          ]
-        )
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def git_branches_ansible_config = sh (
+                                                  returnStdout: true,
+                                                  script: "cat ${params.CONFIG_FILE_PATH} \
+                                                          | grep git_branches_ansible_config: \
+                                                          | sed -e 's/git_branches_ansible_config://g'"
+                                                 ).trim()
 
-        dir ("${params.WORKING_DIR}/ansiblecfg") {
-          sh "mv ansible.cfg ../"
+            def git_url_ansible_config      = sh (
+                                                  returnStdout: true,
+                                                  script: "cat ${params.CONFIG_FILE_PATH} \
+                                                          | grep git_url_ansible_config: \
+                                                          | sed -e 's/git_url_ansible_config://g'"
+                                                 ).trim()
+
+            // Check if Git URL of Ansible Playbook file is set
+            if ( git_url_ansible_config.size() == 0 ) {
+              println "No Ansible Config file is set"
+            } else {
+              checkout(
+                [
+                  $class: 'GitSCM',
+                  branches: [
+                    [
+                      name: "$git_branches_ansible_config"
+                    ]
+                  ],
+                  extensions: [
+                    [
+                      $class: 'RelativeTargetDirectory',
+                      relativeTargetDir: "ansiblecfg"
+                    ]
+                  ],
+                  doGenerateSubmoduleConfigurations: false,
+                  submoduleCfg: [],
+                  userRemoteConfigs: [
+                    [
+                      url: "$git_url_ansible_config"
+                    ]
+                  ]
+                ]
+              )
+              sh "mv ansiblecfg/ansible.cfg ansible-playbooks/"
+            }
+          }
         }
       }
     }
 
     stage('Install galaxy roles') {
       steps {
-        dir ("${params.WORKING_DIR}") {
+        dir ("${params.WORKING_DIR}/ansible-playbooks") {
           script {
             def file_exists = fileExists('roles/requirements.yml')
 
@@ -139,25 +174,27 @@ pipeline {
       steps {
         dir ("${params.WORKING_DIR}") {
           script {
-            def private_key = sh(
-                            returnStdout: true,
-                            script: "echo ${params.SSH_PRIVATE_KEY}"
-                         )
-             
-            if ( private_key.trim().length() != 0 ) {
+            def ssh_private_key = sh (
+                                      returnStdout: true,
+                                      script: "cat ${params.CONFIG_FILE_PATH} \
+                                              | grep ssh_private_key: \
+                                              | sed -e 's/ssh_private_key://g'"
+                                     ).trim()
+
+            if ( ssh_private_key.length() != 0 ) {
               withCredentials(
-                bindings: 
+                bindings:
                   [
                     sshUserPrivateKey
                       (
-                         credentialsId: "${params.SSH_PRIVATE_KEY}", \
+                         credentialsId: "$ssh_private_key", \
                          keyFileVariable: 'PRIVATE_KEY'
                       )
                   ]
-              ) 
+              )
               {
-                sh "cat $PRIVATE_KEY > .private_key.pem"
-                sh "chmod 600 .private_key.pem"
+                sh "cat $PRIVATE_KEY > ansible-playbooks/.private_key.pem"
+                sh "chmod 600 ansible-playbooks/.private_key.pem"
               }
             } else {
               sh "echo 'No private key id provided'"
@@ -171,21 +208,46 @@ pipeline {
       steps {
         dir ("${params.WORKING_DIR}") {
           script {
-            def private_key = sh(
-                            returnStdout: true,
-                            script: "echo ${params.SSH_PRIVATE_KEY}"
-                         )
+            def ansible_playbook     = sh (
+                                           returnStdout: true,
+                                           script: "cat ${params.CONFIG_FILE_PATH} \
+                                                   | grep ansible_playbook: \
+                                                   | sed -e 's/ansible_playbook://g'"
+                                          ).trim()
 
-            if ( private_key.trim().length() != 0 ) {
-              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
-                  ${params.INVENTORY_PARAMS} \
+            def extra_args           = sh (
+                                           returnStdout: true,
+                                           script: "cat ${params.CONFIG_FILE_PATH} \
+                                                   | grep extra_args: \
+                                                   | sed -e 's/extra_args://g'"
+                                          ).trim()
+
+            def inventory_parameters = sh (
+                                           returnStdout: true,
+                                           script: "cat ${params.CONFIG_FILE_PATH} \
+                                                   | grep inventory_parameters: \
+                                                   | sed -e 's/inventory_parameters://g'"
+                                          ).trim()
+
+            def ssh_private_key      = sh (
+                                           returnStdout: true,
+                                           script: "cat ${params.CONFIG_FILE_PATH} \
+                                                   | grep ssh_private_key: \
+                                                   | sed -e 's/ssh_private_key://g'"
+                                          ).trim()
+
+            if ( ssh_private_key.length() != 0 ) {
+              sh "cd ansible-playbooks; \
+                  ansible-playbook $ansible_playbook \
+                  $inventory_parameters \
                   --key-file '.private_key.pem' \
-                  ${params.EXTRA_ARGS} \
+                  $extra_args \
                   | tee ansible.log"
             } else {
-              sh "ansible-playbook ${params.ANSIBLE_PLAYBOOK} \
-                  ${params.INVENTORY_PARAMS} \
-                  ${params.EXTRA_ARGS} \
+              sh "cd ansible-playbooks; \
+                  ansible-playbook $ansible_playbook \
+                  $inventory_parameters \
+                  $extra_args \
                   | tee ansible.log"
             }
           }
@@ -195,7 +257,7 @@ pipeline {
 
     stage('Analyze results') {
       steps {
-        dir ("${params.WORKING_DIR}") {
+        dir ("${params.WORKING_DIR}/ansible-playbooks") {
           script {
             def output = sh(
                             returnStdout: true,

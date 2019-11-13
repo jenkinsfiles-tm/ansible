@@ -1,0 +1,7 @@
+ansible_playbook: install.yml
+extra_args:
+git_branches_playbook: */master
+git_branches_ansible_config: */master
+git_url_playbook: https://github.com/ansible-playbooks-centos7/ansible.git
+inventory_parameters: -i /home/ansible/.ansible_inventories/ansible
+ssh_private_key: centos7.pem

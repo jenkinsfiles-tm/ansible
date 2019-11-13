@@ -1,0 +1,7 @@
+ansible_playbook: add-users.yml
+extra_args:
+git_branches_playbook: */master
+git_branches_ansible_config: */master
+git_url_ansible_config: https://github.com/TomonoriMatsumura/ansible-cfg.git
+git_url_playbook: https://github.com/ansible-centos7/ssh.git
+inventory_parameters: -i /home/ansible/.ansible_inventories/hosts -l node1-initial
