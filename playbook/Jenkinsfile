@@ -102,6 +102,56 @@ pipeline {
       }
     }
 
+    stage('Retrieve Ansible vars file') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def git_branches_vars_file = sh (
+                                            returnStdout: true,
+                                            script: "cat ${params.CONFIG_FILE_PATH} \
+                                                    | grep git_branches_vars_file: \
+                                                    | sed -e 's/git_branches_vars_file://g'"
+                                           ).trim()
+
+            def git_url_vars_file      = sh (
+                                            returnStdout: true,
+                                            script: "cat ${params.CONFIG_FILE_PATH} \
+                                                    | grep git_url_vars_file: \
+                                                    | sed -e 's/git_url_vars_file://g'"
+                                           ).trim()
+
+            if ( git_url_vars_file.size() == 0 ) {
+              println "No Ansible vars file is set"
+            } else {
+              checkout(
+                [
+                  $class: 'GitSCM',
+                  branches: [
+                    [
+                      name: "$git_branches_vars_file"
+                    ]
+                  ],
+                  extensions: [
+                    [
+                      $class: 'RelativeTargetDirectory',
+                      relativeTargetDir: "ansible-vars-file"
+                    ]
+                  ],
+                  doGenerateSubmoduleConfigurations: false,
+                  submoduleCfg: [],
+                  userRemoteConfigs: [
+                    [
+                      url: "$git_url_vars_file"
+                    ]
+                  ]
+                ]
+              )
+            }
+          }
+        }
+      }
+    }
+
     stage('Retrieve ansible.cfg') {
       steps {
         dir ("${params.WORKING_DIR}") {
@@ -222,6 +272,13 @@ pipeline {
                                                    | sed -e 's/extra_args://g'"
                                           ).trim()
 
+            def git_url_vars_file      = sh (
+                                            returnStdout: true,
+                                            script: "cat ${params.CONFIG_FILE_PATH} \
+                                                    | grep git_url_vars_file: \
+                                                    | sed -e 's/git_url_vars_file://g'"
+                                           ).trim()
+
             def inventory_parameters = sh (
                                            returnStdout: true,
                                            script: "cat ${params.CONFIG_FILE_PATH} \
@@ -236,19 +293,43 @@ pipeline {
                                                    | sed -e 's/ssh_private_key://g'"
                                           ).trim()
 
+            def vars_file_path       = sh (
+                                           returnStdout: true,
+                                           script: "cat ${params.CONFIG_FILE_PATH} \
+                                                   | grep vars_file_path: \
+                                                   | sed -e 's/vars_file_path://g'"
+                                          ).trim()
+
             if ( ssh_private_key.length() != 0 ) {
-              sh "cd ansible-playbooks; \
-                  ansible-playbook $ansible_playbook \
-                  $inventory_parameters \
-                  --key-file '.private_key.pem' \
-                  $extra_args \
-                  | tee ansible.log"
+              if ( git_url_vars_file.length() !=0 ) {
+                sh "cd ansible-playbooks; \
+                    ansible-playbook $ansible_playbook \
+                    $inventory_parameters \
+                    --key-file '.private_key.pem' \
+                    -e '@../ansible-vars-file/$vars_file_path' \
+                    | tee ansible.log"
+              } else {
+                sh "cd ansible-playbooks; \
+                    ansible-playbook $ansible_playbook \
+                    $inventory_parameters \
+                    --key-file '.private_key.pem' \
+                    $extra_args \
+                    | tee ansible.log"
+              }
             } else {
-              sh "cd ansible-playbooks; \
-                  ansible-playbook $ansible_playbook \
-                  $inventory_parameters \
-                  $extra_args \
-                  | tee ansible.log"
+              if ( git_url_vars_file.length() !=0 ) {
+                sh "cd ansible-playbooks; \
+                    ansible-playbook $ansible_playbook \
+                    $inventory_parameters \
+                    -e '@../ansible-vars-file/$vars_file_path' \
+                    | tee ansible.log"
+              } else {
+                sh "cd ansible-playbooks; \
+                    ansible-playbook $ansible_playbook \
+                    $inventory_parameters \
+                    $extra_args \
+                    | tee ansible.log"
+              }
             }
           }
         }
