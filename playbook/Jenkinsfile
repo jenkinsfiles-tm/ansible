@@ -254,6 +254,40 @@ pipeline {
       }
     }
 
+    stage('Set vault password file') {
+      steps {
+        dir ("${params.WORKING_DIR}") {
+          script {
+            def vault_password_id    = sh (
+                                           returnStdout: true,
+                                           script: "cat ${params.CONFIG_FILE_PATH} \
+                                                   | grep vault_password_id: \
+                                                   | sed -e 's/vault_password_id://g'"
+                                          ).trim()
+
+            if ( vault_password_id.length() != 0 ) {
+              withCredentials(
+                bindings:
+                  [
+                    string
+                      (
+                         credentialsId: "$vault_password_id", \
+                         variable: 'VAULT_PASSWORD'
+                      )
+                  ]
+              )
+              {
+                sh "echo '$VAULT_PASSWORD' > ansible-playbooks/.vault_password"
+                sh "chmod 600 ansible-playbooks/.vault_password"
+              }
+            } else {
+              sh "echo 'No ansible vault password id provided'"
+            }
+          }
+        }
+      }
+    }
+
     stage('Execute ansible-playbook') {
       steps {
         dir ("${params.WORKING_DIR}") {
@@ -263,7 +297,7 @@ pipeline {
                                            script: "cat ${params.CONFIG_FILE_PATH} \
                                                    | grep ansible_playbook: \
                                                    | sed -e 's/ansible_playbook://g'"
-                                          ).trim()
+                                           ).trim()
 
             def extra_args           = sh (
                                            returnStdout: true,
@@ -272,12 +306,12 @@ pipeline {
                                                    | sed -e 's/extra_args://g'"
                                           ).trim()
 
-            def git_url_vars_file      = sh (
-                                            returnStdout: true,
-                                            script: "cat ${params.CONFIG_FILE_PATH} \
-                                                    | grep git_url_vars_file: \
-                                                    | sed -e 's/git_url_vars_file://g'"
-                                           ).trim()
+            def git_url_vars_file    = sh (
+                                           returnStdout: true,
+                                           script: "cat ${params.CONFIG_FILE_PATH} \
+                                                   | grep git_url_vars_file: \
+                                                   | sed -e 's/git_url_vars_file://g'"
+                                          ).trim()
 
             def inventory_parameters = sh (
                                            returnStdout: true,
@@ -300,37 +334,80 @@ pipeline {
                                                    | sed -e 's/vars_file_path://g'"
                                           ).trim()
 
+            def vault_password_id    = sh (
+                                           returnStdout: true,
+                                           script: "cat ${params.CONFIG_FILE_PATH} \
+                                                   | grep vault_password_id: \
+                                                   | sed -e 's/vault_password_id://g'"
+                                          ).trim()
+
+            // Set private key file parameter
             if ( ssh_private_key.length() != 0 ) {
-              if ( git_url_vars_file.length() !=0 ) {
-                sh "cd ansible-playbooks; \
-                    ansible-playbook $ansible_playbook \
-                    $inventory_parameters \
-                    --key-file '.private_key.pem' \
-                    -e '@../ansible-vars-file/$vars_file_path' \
-                    | tee ansible.log"
-              } else {
-                sh "cd ansible-playbooks; \
-                    ansible-playbook $ansible_playbook \
-                    $inventory_parameters \
-                    --key-file '.private_key.pem' \
-                    $extra_args \
-                    | tee ansible.log"
-              }
+              ssh_private_key_params = sh (
+                                           returnStdout: true,
+                                           script: "echo '--key-file \'.private_key.pem\''"
+                                          )
             } else {
-              if ( git_url_vars_file.length() !=0 ) {
-                sh "cd ansible-playbooks; \
-                    ansible-playbook $ansible_playbook \
-                    $inventory_parameters \
-                    -e '@../ansible-vars-file/$vars_file_path' \
-                    | tee ansible.log"
-              } else {
-                sh "cd ansible-playbooks; \
-                    ansible-playbook $ansible_playbook \
-                    $inventory_parameters \
-                    $extra_args \
-                    | tee ansible.log"
-              }
+              ssh_private_key_params = sh (
+                                           returnStdout: true,
+                                           script: "echo ''"
+                                          )
             }
+
+            // Set Ansible vault password file parameter
+            if ( vault_password_id.length() != 0 ) {
+              vault_password_params = sh (
+                                          returnStdout: true,
+                                          script: "echo '--vault-password-file .vault_password'"
+                                         )
+            } else {
+              vault_password_params = sh (
+                                          returnStdout: true,
+                                          script: "echo ''"
+                                         )
+            }
+
+            // Set Ansible vars file parameter
+            if ( vars_file_path.length() != 0 ) {
+              vars_file_path_params = sh (
+                                          returnStdout: true,
+                                          script: "echo '-e \'@../ansible-vars-file/$vars_file_path\' '"
+                                         )
+            } else {
+              vars_file_path_params = sh (
+                                          returnStdout: true,
+                                          script: "echo ''"
+                                         )
+            }
+
+            // Set Ansible extra variables parameter
+            if ( extra_args.length() != 0 ) {
+              extra_args_params = sh (
+                                      returnStdout: true,
+                                      script: "echo '$extra_args'"
+                                     )
+            } else {
+              extra_args_params = sh (
+                                      returnStdout: true,
+                                      script: "echo ''"
+                                     )
+            }
+
+            ansible_playbook_command = sh (
+                                           returnStdout: true,
+                                           script: "echo 'ansible-playbook \
+                                           $ansible_playbook \
+                                           $inventory_parameters \
+                                           $ssh_private_key_params \
+                                           $vars_file_path_params \
+                                           $extra_args_params \
+                                           $vault_password_params \
+                                           | tee ansible.log'"
+                                          ).trim().replaceAll("\\s{2,}", " ")
+
+            // Execute ansible-playbook command
+            sh "cd ansible-playbooks; \
+                $ansible_playbook_command"
           }
         }
       }
