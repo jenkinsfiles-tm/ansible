@@ -30,29 +30,65 @@ pipeline {
   stages {
     stage('Retrieve Config file') {
       steps {
-        checkout(
-          [
-            $class: 'GitSCM',
-            branches: [
+        script {
+          def git_credentials_id = sh (
+                                       returnStdout: true,
+                                       script: "cat ${params.CONFIG_FILE_PATH} \
+                                               | grep git_credentials_id: \
+                                               | sed -e 's/git_credentials_id://g'"
+                                      )
+
+          if ( git_credentials_id.size() == 0 ) {
+            checkout(
               [
-                name: "${params.GIT_BRANCHES}"
+                $class: 'GitSCM',
+                branches: [
+                  [
+                    name: "${params.GIT_BRANCHES}"
+                  ]
+                ],
+                extensions: [
+                  [
+                    $class: 'RelativeTargetDirectory',
+                    relativeTargetDir: "${params.WORKING_DIR}"
+                  ]
+                ],
+                doGenerateSubmoduleConfigurations: false,
+                submoduleCfg: [],
+                userRemoteConfigs: [
+                  [
+                    credentialsId: "$git_credentials_id",
+                    url: "${params.GIT_URL}"
+                  ]
+                ]
               ]
-            ],
-            extensions: [
+            )
+          } else {
+            checkout(
               [
-                $class: 'RelativeTargetDirectory',
-                relativeTargetDir: "${params.WORKING_DIR}"
+                $class: 'GitSCM',
+                branches: [
+                  [
+                    name: "${params.GIT_BRANCHES}"
+                  ]
+                ],
+                extensions: [
+                  [
+                    $class: 'RelativeTargetDirectory',
+                    relativeTargetDir: "${params.WORKING_DIR}"
+                  ]
+                ],
+                doGenerateSubmoduleConfigurations: false,
+                submoduleCfg: [],
+                userRemoteConfigs: [
+                  [
+                    url: "${params.GIT_URL}"
+                  ]
+                ]
               ]
-            ],
-            doGenerateSubmoduleConfigurations: false,
-            submoduleCfg: [],
-            userRemoteConfigs: [
-              [
-                url: "${params.GIT_URL}"
-              ]
-            ]
-          ]
-        )
+            )
+          }
+        }
       }
     }
 
@@ -67,6 +103,13 @@ pipeline {
                                                     | sed -e 's/git_branches_playbook://g'"
                                            ).trim()
 
+            def git_credentials_id    = sh (
+                                            returnStdout: true,
+                                            script: "cat ${params.CONFIG_FILE_PATH} \
+                                                    | grep git_credentials_id: \
+                                                    | sed -e 's/git_credentials_id://g'"
+                                           )
+
             def git_url_playbook      = sh (
                                             returnStdout: true,
                                             script: "cat ${params.CONFIG_FILE_PATH} \
@@ -74,29 +117,56 @@ pipeline {
                                                     | sed -e 's/git_url_playbook://g'"
                                            ).trim()
 
-            checkout(
-              [
-                $class: 'GitSCM',
-                branches: [
-                  [
-                    name: "$git_branches_playbook"
-                  ]
-                ],
-                extensions: [
-                  [
-                    $class: 'RelativeTargetDirectory',
-                    relativeTargetDir: "ansible-playbooks"
-                  ]
-                ],
-                doGenerateSubmoduleConfigurations: false,
-                submoduleCfg: [],
-                userRemoteConfigs: [
-                  [
-                    url: "$git_url_playbook"
+            if ( git_credentials_id.size() == 0 ) {
+              checkout(
+                [
+                  $class: 'GitSCM',
+                  branches: [
+                    [
+                      name: "$git_branches_playbook"
+                    ]
+                  ],
+                  extensions: [
+                    [
+                      $class: 'RelativeTargetDirectory',
+                      relativeTargetDir: "ansible-playbooks"
+                    ]
+                  ],
+                  doGenerateSubmoduleConfigurations: false,
+                  submoduleCfg: [],
+                  userRemoteConfigs: [
+                    [
+                      credentialsId: "$git_credentials_id",
+                      url: "$git_url_playbook"
+                    ]
                   ]
                 ]
-              ]
-            )
+              )
+            } else {
+              checkout(
+                [
+                  $class: 'GitSCM',
+                  branches: [
+                    [
+                      name: "$git_branches_playbook"
+                    ]
+                  ],
+                  extensions: [
+                    [
+                      $class: 'RelativeTargetDirectory',
+                      relativeTargetDir: "ansible-playbooks"
+                    ]
+                  ],
+                  doGenerateSubmoduleConfigurations: false,
+                  submoduleCfg: [],
+                  userRemoteConfigs: [
+                    [
+                      url: "$git_url_playbook"
+                    ]
+                  ]
+                ]
+              )
+            }
           }
         }
       }
@@ -113,6 +183,13 @@ pipeline {
                                                     | sed -e 's/git_branches_vars_file://g'"
                                            ).trim()
 
+            def git_credentials_id     = sh (
+                                             returnStdout: true,
+                                             script: "cat ${params.CONFIG_FILE_PATH} \
+                                                     | grep git_credentials_id: \
+                                                     | sed -e 's/git_credentials_id://g'"
+                                            )
+
             def git_url_vars_file      = sh (
                                             returnStdout: true,
                                             script: "cat ${params.CONFIG_FILE_PATH} \
@@ -123,29 +200,56 @@ pipeline {
             if ( git_url_vars_file.size() == 0 ) {
               println "No Ansible vars file is set"
             } else {
-              checkout(
-                [
-                  $class: 'GitSCM',
-                  branches: [
-                    [
-                      name: "$git_branches_vars_file"
-                    ]
-                  ],
-                  extensions: [
-                    [
-                      $class: 'RelativeTargetDirectory',
-                      relativeTargetDir: "ansible-vars-file"
-                    ]
-                  ],
-                  doGenerateSubmoduleConfigurations: false,
-                  submoduleCfg: [],
-                  userRemoteConfigs: [
-                    [
-                      url: "$git_url_vars_file"
+              if ( git_credentials_id.size() == 0 ) {
+                checkout(
+                  [
+                    $class: 'GitSCM',
+                    branches: [
+                      [
+                        name: "$git_branches_vars_file"
+                      ]
+                    ],
+                    extensions: [
+                      [
+                        $class: 'RelativeTargetDirectory',
+                        relativeTargetDir: "ansible-vars-file"
+                      ]
+                    ],
+                    doGenerateSubmoduleConfigurations: false,
+                    submoduleCfg: [],
+                    userRemoteConfigs: [
+                      [
+                        credentialsId: "$git_credentials_id",
+                        url: "$git_url_vars_file"
+                      ]
                     ]
                   ]
-                ]
-              )
+                )
+              } else {
+                checkout(
+                  [
+                    $class: 'GitSCM',
+                    branches: [
+                      [
+                        name: "$git_branches_vars_file"
+                      ]
+                    ],
+                    extensions: [
+                      [
+                        $class: 'RelativeTargetDirectory',
+                        relativeTargetDir: "ansible-vars-file"
+                      ]
+                    ],
+                    doGenerateSubmoduleConfigurations: false,
+                    submoduleCfg: [],
+                    userRemoteConfigs: [
+                      [
+                        url: "$git_url_vars_file"
+                      ]
+                    ]
+                  ]
+                )
+              }
             }
           }
         }
@@ -163,6 +267,13 @@ pipeline {
                                                           | sed -e 's/git_branches_ansible_config://g'"
                                                  ).trim()
 
+            def git_credentials_id    = sh (
+                                            returnStdout: true,
+                                            script: "cat ${params.CONFIG_FILE_PATH} \
+                                                    | grep git_credentials_id: \
+                                                    | sed -e 's/git_credentials_id://g'"
+                                           )
+
             def git_url_ansible_config      = sh (
                                                   returnStdout: true,
                                                   script: "cat ${params.CONFIG_FILE_PATH} \
@@ -174,29 +285,56 @@ pipeline {
             if ( git_url_ansible_config.size() == 0 ) {
               println "No Ansible Config file is set"
             } else {
-              checkout(
-                [
-                  $class: 'GitSCM',
-                  branches: [
-                    [
-                      name: "$git_branches_ansible_config"
-                    ]
-                  ],
-                  extensions: [
-                    [
-                      $class: 'RelativeTargetDirectory',
-                      relativeTargetDir: "ansiblecfg"
-                    ]
-                  ],
-                  doGenerateSubmoduleConfigurations: false,
-                  submoduleCfg: [],
-                  userRemoteConfigs: [
-                    [
-                      url: "$git_url_ansible_config"
+              if ( git_credentials_id.size() == 0 ) {
+                checkout(
+                  [
+                    $class: 'GitSCM',
+                    branches: [
+                      [
+                        name: "$git_branches_ansible_config"
+                      ]
+                    ],
+                    extensions: [
+                      [
+                        $class: 'RelativeTargetDirectory',
+                        relativeTargetDir: "ansiblecfg"
+                      ]
+                    ],
+                    doGenerateSubmoduleConfigurations: false,
+                    submoduleCfg: [],
+                    userRemoteConfigs: [
+                      [
+                        credentialsId: "$git_credentials_id",
+                        url: "$git_url_ansible_config"
+                      ]
                     ]
                   ]
-                ]
-              )
+                )
+              } else {
+                checkout(
+                  [
+                    $class: 'GitSCM',
+                    branches: [
+                      [
+                        name: "$git_branches_ansible_config"
+                      ]
+                    ],
+                    extensions: [
+                      [
+                        $class: 'RelativeTargetDirectory',
+                        relativeTargetDir: "ansiblecfg"
+                      ]
+                    ],
+                    doGenerateSubmoduleConfigurations: false,
+                    submoduleCfg: [],
+                    userRemoteConfigs: [
+                      [
+                        url: "$git_url_ansible_config"
+                      ]
+                    ]
+                  ]
+                )
+              }
               sh "mv ansiblecfg/ansible.cfg ansible-playbooks/"
             }
           }
