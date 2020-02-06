@@ -3,13 +3,13 @@
 pipeline {
 
   agent { 
-          label "${params.AGENT}"
+          label "${params.AGENT_LABEL}"
         } 
 
   parameters {
     string(
-      name: 'AGENT',
-      defaultValue: 'any',
+      name: 'AGENT_LABEL',
+      defaultValue: 'master',
       description: 'Agent which execute ansible-playbook command'
     )
     string(
