@@ -2,7 +2,9 @@
 
 pipeline {
 
-  agent any
+  agent { 
+          label ${params.AGENT} 
+        } 
 
   parameters {
     string(
@@ -33,9 +35,6 @@ pipeline {
   }
 
   stages {
-
-    agent ${params.AGENT}
-
     stage('Retrieve Config file') {
       steps {
         script {
