@@ -3,7 +3,7 @@
 pipeline {
 
   agent { 
-          label ${params.AGENT} 
+          label "${params.AGENT}"
         } 
 
   parameters {
