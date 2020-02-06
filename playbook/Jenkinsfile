@@ -2,9 +2,12 @@
 
 pipeline {
 
-  agent any
-
   parameters {
+    string(
+      name: 'AGENT',
+      defaultValue: 'any',
+      description: 'Agent which execute ansible-playbook command'
+    )
     string(
       name: 'CONFIG_FILE_PATH',
       defaultValue: '',
@@ -26,6 +29,8 @@ pipeline {
       description: 'Job working directory'
     )
   }
+
+  agent ${params.AGENT}
 
   stages {
     stage('Retrieve Config file') {
